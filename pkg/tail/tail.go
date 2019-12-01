@@ -1,11 +1,11 @@
-package main
+package tail
 
 import (
+	"easyexec/pkg/common"
+	"easyexec/pkg/login"
 	"easyexec/pkg/objs"
-	"fmt"
 	"log"
 	"os"
-	"show_logs/objs"
 	"strings"
 
 	v1 "k8s.io/api/core/v1"
@@ -16,42 +16,25 @@ import (
 	"k8s.io/client-go/tools/remotecommand"
 )
 
-func showHelp() {
-	fmt.Println("")
-	fmt.Println("使用方法：")
-	fmt.Println("logexec 容器ID [可选参数...]")
-	fmt.Println("")
-	fmt.Println("可选参数：")
-	fmt.Println("	日志路径， 默认/home/tomcat/目录下的app.log日志")
-	fmt.Println("	显示最后多少行日志，默认最后20行")
-	fmt.Println("如：logexec containerid /home/tomcat/log/*/app.log 30")
-	fmt.Println("")
+type Tail struct {
+	common.CommonType
+	FilePath string
 }
 
-func main() {
-	var podName string
-	var path = "/home/tomcat/log/*/app.log"
-	var line = "20"
-	args := os.Args
-	if len(args) < 2 {
-		showHelp()
-		return
-	} else if len(args) == 2 {
-		podName = args[1]
-	} else if len(args) == 3 {
-		podName = args[1]
-		path = args[2]
-	} else if len(args) == 4 {
-		podName = args[1]
-		path = args[2]
-		line = args[3]
-	} else {
-		showHelp()
-		return
+func NewTail(f string) *Tail {
+	return &Tail{
+		FilePath: f,
 	}
+}
+
+func (t *Tail) Tail() {
+	var line = "20"
 
 	// var podName string = "kube-apiserver-docker-for-desktop"
-	kubeconfig := "/Users/Tibbers/.kube/config"
+	kubeconfig, err := login.GetConfigPath()
+	if err != nil {
+		log.Fatal(err)
+	}
 	clientConfig, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
 		log.Fatal(err)
@@ -61,8 +44,35 @@ func main() {
 		log.Fatal(err)
 	}
 
-	pod := objs.GetAvaliablePod(clientset, podName)
-	ExecuteRemoteCommand(clientset, clientConfig, pod, "tail -f -n "+line+" "+path)
+	podGetter := objs.NewPodGetter(clientset)
+	podGetter.PodName = t.PodName
+	podGetter.DeployName = t.DeploymentName
+	podGetter.ContainerIndex = t.ContainerIndex
+	var pod *v1.Pod
+	if t.Namespace != "" {
+		podGetter.Namespace = t.Namespace
+		pod, err = podGetter.Get()
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		nss, err := objs.GetNsByCookie()
+		if err != nil {
+			log.Fatal(err)
+		}
+		for _, ns := range nss {
+			podGetter.Namespace = ns
+			pod, err = podGetter.Get()
+			if err == nil {
+				break
+			}
+		}
+		if pod == nil {
+			log.Fatal("无法智能查询到POD")
+		}
+	}
+
+	ExecuteRemoteCommand(clientset, clientConfig, pod, "tail -f -n "+line+" "+t.FilePath)
 }
 
 func ExecuteRemoteCommand(coreClient kubernetes.Interface, restCfg *restclient.Config, pod *v1.Pod, command string) {

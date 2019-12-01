@@ -2,14 +2,17 @@ package login
 
 import (
 	"crypto/tls"
+	"easyexec/pkg/common"
 	"encoding/json"
 	"fmt"
-	"github.com/pkg/errors"
+	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/pkg/errors"
 )
 
 var kubeconfig = `apiVersion: v1
@@ -23,7 +26,7 @@ clusters:
 users:
 - name: "${RANCHER_CLUSTER_NAME}"
   user:
-    token: "${TOKEN}"
+    token: "${RANCHER_TOKEN}"
 
 contexts:
 - name: "${RANCHER_CLUSTER_NAME}"
@@ -33,32 +36,7 @@ contexts:
 
 current-context: "${RANCHER_CLUSTER_NAME}"`
 
-var (
-	RANCHER_URL               = "https://rancher.i.fbank.com/v3-public/localProviders/local?action=login"
-	RANCHER_USER_INFO_URL     = "https://rancher.i.fbank.com/v3/users?me=true&limit=-1&sort=name"
-	RANCHER_KUBECONFIG_SERVER = "https://rancher.i.fbank.com/k8s/clusters/local"
-	RANCHER_CLUSTER_NAME      = "pre-xpf"
-	RANCHER_CLUSTER_CA        = `LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSUM3akNDQ\
-      WRhZ0F3SUJBZ0lCQURBTkJna3Foa2lHOXcwQkFRc0ZBREFvTVJJd0VBWURWUVFLRXdsMGFHVXQKY\
-      21GdVkyZ3hFakFRQmdOVkJBTVRDV05oZEhSc1pTMWpZVEFlRncweE9URXdNamt3TnpJNE5EUmFGd\
-      zB5T1RFdwpNall3TnpJNE5EUmFNQ2d4RWpBUUJnTlZCQW9UQ1hSb1pTMXlZVzVqYURFU01CQUdBM\
-      VVFQXhNSlkyRjBkR3hsCkxXTmhNSUlCSWpBTkJna3Foa2lHOXcwQkFRRUZBQU9DQVE4QU1JSUJDZ\
-      0tDQVFFQXhTU3RNbzZDcDBzdXhIS1IKL3hDNjVTQnZmSlQvUWd6NGRaaGpITlVsNndoK3ZaeXljU\
-      lFJY2ZudExmWUlTYlhFY0JrM2swVDFoMnBXN0hXbwpNanVUQ0lxWFVhSjIxY0UvSWY1OEtpNHZoR\
-      ldaakduOStjS3dkSFpHOWNTVnVTSFZsTTNTSFdOUWlhL2IvZVNPCmQxbVdWTUgyaXN0T3Q4Wjhma\
-      WN5MGdHYnZGVnFWSHQ0a3ozUEhlVzJNU3REMDRDMDVZajFjb0ttMmtDLytwcVYKRkUrT21uYTBIa\
-      kVnOWNiN3VMMURlMHJkL3ovK3VsZ20xQmRDd2R0WFhUWjM5bGpBbHdpVjRKMHFFTnBkY2hvawoyM\
-      DZWNC9GQnNoVzZ1bURFMlVmd2k3OW92N2dDMS8vbUp3YXFvWVVtZWw1VXl4dWsyY2dvd1BVU0NlR\
-      GtIMEJaCno4V0lpUUlEQVFBQm95TXdJVEFPQmdOVkhROEJBZjhFQkFNQ0FxUXdEd1lEVlIwVEFRS\
-      C9CQVV3QXdFQi96QU4KQmdrcWhraUc5dzBCQVFzRkFBT0NBUUVBZ1FOZU93MnhDMURLQUhPd2o0b\
-      WNmSlZUcnB4Y0hsUUxSNE5WbDJ1cwp1Qmx0TUordnl6amxKVG1FemR2MDV5YjdjZlJPY2srOCtXK\
-      2R5L042N1poTkZSQm1XYUxGSDQrWEdqZjVNOWdQCjYyYUVpVWo5RnNtRWRoTlN1MTBIYkRIODJMc\
-      2hpT00zNWNHL3JYckYxcVV4cXB4NkVIM1kzN0tObmxraW1hWkkKNlExeGx3VnZ2Nm1HZDNoRHRJb\
-      2RqaTF5dEJhNmdIUC9oMk5XK1Q1dmpTY0k4THhObWxRcGNrbGNvZENwZUtJRApCMEo4RnJvaTBpa\
-      EtPUXJKTkpZMVVOaEw5QzliRUxGcGZQYS9idWZ2T0ZjQU9odG56RDFMenk2Y1oyazNOL3ZYCmFQU\
-      WRBeEJYVER4TmNHRk1vbG1aRC9PdWtCNGgrOWR6bmxaL0thMHdHT1BpREE9PQotLS0tLUVORCBDR\
-      VJUSUZJQ0FURS0tLS0t`
-)
+var RANCHER_TOKEN = "kubeconfig-%s:%s"
 
 type Login struct {
 	Username     string       `json:"username"`
@@ -66,6 +44,16 @@ type Login struct {
 	ResponseType string       `json:"responseType"`
 	Ttl          int64        `json:"ttl"`
 	client       *http.Client `json: "-"`
+}
+
+type UserInfo struct {
+	Username string `json:"username"`
+	Enabled  bool   `json:"Enabled"`
+	Id       string `json:"Id"`
+}
+
+type UserCollection struct {
+	Data []UserInfo `json:"data"`
 }
 
 func NewLogin(username, password string) *Login {
@@ -99,8 +87,16 @@ func (l *Login) Login() error {
 	if l.Username == "" || l.Password == "" {
 		return errors.New("用户名或密码不能为空")
 	}
-	l.request()
-	return nil
+	err := l.request()
+	if err != nil {
+		return err
+	}
+	kubeconfig = strings.ReplaceAll(kubeconfig, "${RANCHER_KUBECONFIG_SERVER}", common.RANCHER_KUBECONFIG_SERVER)
+	kubeconfig = strings.ReplaceAll(kubeconfig, "${RANCHER_CLUSTER_NAME}", common.RANCHER_CLUSTER_NAME)
+	kubeconfig = strings.ReplaceAll(kubeconfig, "${RANCHER_CLUSTER_CA}", common.RANCHER_CLUSTER_CA)
+	kubeconfig = strings.ReplaceAll(kubeconfig, "${RANCHER_TOKEN}", RANCHER_TOKEN)
+
+	return l.store()
 }
 
 func (l *Login) request() error {
@@ -109,8 +105,7 @@ func (l *Login) request() error {
 		return err
 	}
 	js := string(j)
-	fmt.Println(js)
-	req, err := http.NewRequest("POST", RANCHER_URL, strings.NewReader(js))
+	req, err := http.NewRequest("POST", common.RANCHER_URL, strings.NewReader(js))
 	if err != nil {
 		return err
 	}
@@ -126,22 +121,99 @@ func (l *Login) request() error {
 				break
 			}
 		}
+		if cookie == nil {
+			return errors.New("认证失败，无法获取Cookie信息")
+		}
+		wholetoken := strings.Split(cookie.Value, ":")
+		if len(wholetoken) != 2 {
+			return errors.New("Token格式不正确")
+		}
+		token := wholetoken[1]
+		req, err = http.NewRequest("GET", common.RANCHER_USER_INFO_URL, nil)
+		if err != nil {
+			return err
+		}
+		req.AddCookie(cookie)
+		defer l.storeCookie(cookie)
 
-		return nil
+		resp, err = l.client.Do(req)
+		if err != nil {
+			return err
+		}
+		if resp.StatusCode == 200 {
+			b, err := ioutil.ReadAll(resp.Body)
+			if err != nil {
+				return err
+			}
+			var conllection UserCollection
+			err = json.Unmarshal(b, &conllection)
+			if err != nil {
+				return err
+			}
+			var userId string
+			for _, data := range conllection.Data {
+				if data.Username == l.Username && data.Enabled {
+					userId = data.Id
+					break
+				}
+			}
+			RANCHER_TOKEN = fmt.Sprintf(RANCHER_TOKEN, userId, token)
+			return nil
+		} else {
+			return errors.New("认证失败，无法获取用户信息, " + resp.Status)
+		}
 	} else {
-		return errors.New("认证失败")
+		return errors.New("认证失败, " + resp.Status)
 	}
 }
 
 func (l *Login) store() error {
+	path, err := GetConfigPath()
+	if err != nil {
+		return err
+	}
+	err = ioutil.WriteFile(path, []byte(kubeconfig), 0666)
+	return err
+}
+
+func (l *Login) storeCookie(cookie *http.Cookie) error {
+	path, err := GetCookiePath()
+	if err != nil {
+		return err
+	}
+	c, err := json.Marshal(cookie)
+	if err != nil {
+		return nil
+	}
+	err = ioutil.WriteFile(path, []byte(c), 0666)
+	return err
+}
+
+func getBaseDir() string {
 	dir, err := os.UserHomeDir()
 	if err != nil {
 		dir = os.TempDir()
 	}
+	if dir[len(dir)-1:] != "/" {
+		dir = dir + "/"
+	}
+	return dir
+}
+
+func GetConfigPath() (string, error) {
+	dir := getBaseDir()
 	path, err := GetStoreFilePath(dir)
 	if err != nil {
-		return err
+		return "", err
 	}
-	fmt.Println(path)
-	return nil
+	return path, nil
+}
+
+func GetCookiePath() (string, error) {
+	dir := getBaseDir()
+	path, err := GetStoreCookiePath(dir)
+	if err != nil {
+		return "", err
+	}
+	return path, nil
 }

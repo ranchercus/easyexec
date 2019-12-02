@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strings"
 
-	v1 "k8s.io/api/core/v1"
+	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 )
@@ -61,7 +61,7 @@ func (g *PodGetter) getPodListByDeployment() ([]v1.Pod, error) {
 	pods := make([]v1.Pod, 0)
 	if g.PodName == "" {
 		lbs := make([]string, 0)
-		for k, v := range deploy.Labels {
+		for k, v := range deploy.Spec.Selector.MatchLabels {
 			lbs = append(lbs, k+"="+v)
 		}
 		plist, err := podClient.List(metav1.ListOptions{
@@ -72,14 +72,14 @@ func (g *PodGetter) getPodListByDeployment() ([]v1.Pod, error) {
 		}
 		pods = append(pods, plist.Items...)
 	} else {
-		pod, err := podClient.Get(g.Namespace, metav1.GetOptions{})
+		pod, err := podClient.Get(g.PodName, metav1.GetOptions{})
 		if err != nil {
 			return nil, err
 		}
 		notFound := false
-		for plk, plv := range pod.Labels {
+		for dlk, dlv := range deploy.Spec.Selector.MatchLabels {
 			found := false
-			for dlk, dlv := range deploy.Labels {
+			for plk, plv := range pod.Labels {
 				if plk == dlk && plv == dlv {
 					found = true
 					break
@@ -87,7 +87,6 @@ func (g *PodGetter) getPodListByDeployment() ([]v1.Pod, error) {
 			}
 			if !found {
 				notFound = true
-				break
 			}
 		}
 		if notFound {

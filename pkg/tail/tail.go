@@ -4,16 +4,14 @@ import (
 	"easyexec/pkg/common"
 	"easyexec/pkg/login"
 	"easyexec/pkg/objs"
-	"log"
-	"os"
-	"strings"
-
-	v1 "k8s.io/api/core/v1"
+	"k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/remotecommand"
+	"log"
+	"os"
 )
 
 type Tail struct {
@@ -30,7 +28,6 @@ func NewTail(f string) *Tail {
 func (t *Tail) Tail() {
 	var line = "20"
 
-	// var podName string = "kube-apiserver-docker-for-desktop"
 	kubeconfig, err := login.GetConfigPath()
 	if err != nil {
 		log.Fatal(err)
@@ -72,10 +69,19 @@ func (t *Tail) Tail() {
 		}
 	}
 
-	ExecuteRemoteCommand(clientset, clientConfig, pod, "tail -f -n "+line+" "+t.FilePath)
+	t.executeRemoteCommand(clientset, clientConfig, pod, "tail -f -n "+line+" "+t.FilePath)
 }
 
-func ExecuteRemoteCommand(coreClient kubernetes.Interface, restCfg *restclient.Config, pod *v1.Pod, command string) {
+func (t *Tail) executeRemoteCommand(coreClient kubernetes.Interface, restCfg *restclient.Config, pod *v1.Pod, command string) {
+	if t.execute(coreClient, restCfg, pod, "sh", command) != nil {
+		err := t.execute(coreClient, restCfg, pod, "bash", command)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+}
+
+func (t *Tail) execute(coreClient kubernetes.Interface, restCfg *restclient.Config, pod *v1.Pod, scmd, command string) error {
 	request := coreClient.CoreV1().
 		RESTClient().
 		Post().
@@ -84,17 +90,18 @@ func ExecuteRemoteCommand(coreClient kubernetes.Interface, restCfg *restclient.C
 		Name(pod.Name).
 		SubResource("exec").
 		VersionedParams(&v1.PodExecOptions{
-			Command: strings.Split(command, " "),
-			Stdout:  true,
-			Stderr:  true,
-			TTY:     true,
+			Container: pod.Spec.Containers[t.ContainerIndex-1].Name,
+			Command:   []string{scmd, "-c", command},
+			Stdout:    true,
+			Stderr:    true,
+			TTY:       false,
+			Stdin:     true,
 		}, scheme.ParameterCodec)
 	exec, err := remotecommand.NewSPDYExecutor(restCfg, "POST", request.URL())
 	err = exec.Stream(remotecommand.StreamOptions{
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
+		Stdin:  os.Stdin,
 	})
-	if err != nil {
-		log.Fatal(err)
-	}
+	return err
 }

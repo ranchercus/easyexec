@@ -1,7 +1,8 @@
-package main
+package easyexec
 
 import (
 	"easyexec/pkg/login"
+	tail2 "easyexec/pkg/tail"
 	"flag"
 	"fmt"
 	"os"
@@ -46,7 +47,12 @@ func main() {
 	case "tail":
 		flag.StringVar(&f, "f", "/home/tomcat/logs/*/app.log", "文件路径")
 		parse()
-		fmt.Println("tail")
+		tail := tail2.NewTail(f)
+		tail.Namespace = n
+		tail.DeploymentName = d
+		tail.PodName = p
+		tail.ContainerIndex = i
+		tail.Tail()
 	case "exec":
 		parse()
 		fmt.Println("Coming Soon")

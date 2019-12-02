@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"easyexec/pkg/common"
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -15,28 +14,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-var kubeconfig = `apiVersion: v1
-kind: Config
-clusters:
-- name: "${RANCHER_CLUSTER_NAME}"
-  cluster:
-    server: "${RANCHER_KUBECONFIG_SERVER}"
-    certificate-authority-data: "${RANCHER_CLUSTER_CA}"
-
-users:
-- name: "${RANCHER_CLUSTER_NAME}"
-  user:
-    token: "${RANCHER_TOKEN}"
-
-contexts:
-- name: "${RANCHER_CLUSTER_NAME}"
-  context:
-    user: "${RANCHER_CLUSTER_NAME}"
-    cluster: "${RANCHER_CLUSTER_NAME}"
-
-current-context: "${RANCHER_CLUSTER_NAME}"`
-
-var RANCHER_TOKEN = "kubeconfig-%s:%s"
+var kubeconfig = ""
 
 type Login struct {
 	Username     string       `json:"username"`
@@ -54,6 +32,11 @@ type UserInfo struct {
 
 type UserCollection struct {
 	Data []UserInfo `json:"data"`
+}
+
+type KubeConfig struct {
+	BaseType string `json:"baseType"`
+	Config   string `json:"config"`
 }
 
 func NewLogin(username, password string) *Login {
@@ -91,10 +74,6 @@ func (l *Login) Login() error {
 	if err != nil {
 		return err
 	}
-	kubeconfig = strings.ReplaceAll(kubeconfig, "${RANCHER_KUBECONFIG_SERVER}", common.RANCHER_KUBECONFIG_SERVER)
-	kubeconfig = strings.ReplaceAll(kubeconfig, "${RANCHER_CLUSTER_NAME}", common.RANCHER_CLUSTER_NAME)
-	kubeconfig = strings.ReplaceAll(kubeconfig, "${RANCHER_CLUSTER_CA}", common.RANCHER_CLUSTER_CA)
-	kubeconfig = strings.ReplaceAll(kubeconfig, "${RANCHER_TOKEN}", RANCHER_TOKEN)
 
 	return l.store()
 }
@@ -124,18 +103,11 @@ func (l *Login) request() error {
 		if cookie == nil {
 			return errors.New("认证失败，无法获取Cookie信息")
 		}
-		wholetoken := strings.Split(cookie.Value, ":")
-		if len(wholetoken) != 2 {
-			return errors.New("Token格式不正确")
-		}
-		token := wholetoken[1]
-		req, err = http.NewRequest("GET", common.RANCHER_USER_INFO_URL, nil)
+		req, err = http.NewRequest("POST", common.RANCHER_kUBECONFIG_URL, nil)
 		if err != nil {
 			return err
 		}
 		req.AddCookie(cookie)
-		defer l.storeCookie(cookie)
-
 		resp, err = l.client.Do(req)
 		if err != nil {
 			return err
@@ -145,19 +117,13 @@ func (l *Login) request() error {
 			if err != nil {
 				return err
 			}
-			var conllection UserCollection
-			err = json.Unmarshal(b, &conllection)
+			var jconfig KubeConfig
+
+			err = json.Unmarshal(b, &jconfig)
 			if err != nil {
 				return err
 			}
-			var userId string
-			for _, data := range conllection.Data {
-				if data.Username == l.Username && data.Enabled {
-					userId = data.Id
-					break
-				}
-			}
-			RANCHER_TOKEN = fmt.Sprintf(RANCHER_TOKEN, userId, token)
+			kubeconfig = jconfig.Config
 			return nil
 		} else {
 			return errors.New("认证失败，无法获取用户信息, " + resp.Status)

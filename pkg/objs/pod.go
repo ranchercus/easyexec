@@ -24,6 +24,22 @@ func NewPodGetter(clientset kubernetes.Interface) *PodGetter {
 }
 
 func (g *PodGetter) Get() (*v1.Pod, error) {
+	pods, err := g.primaryFilter()
+	if err != nil {
+		return nil, err
+	}
+	return g.filterAvaliablePod(pods)
+}
+
+func (g *PodGetter) List() ([]*v1.Pod, error) {
+	pods, err := g.primaryFilter()
+	if err != nil {
+		return nil, err
+	}
+	return g.filterAvaliablePods(pods), nil
+}
+
+func (g *PodGetter) primaryFilter() ([]v1.Pod, error) {
 	var pods []v1.Pod
 	var err error
 	if g.DeployName == "" {
@@ -37,7 +53,7 @@ func (g *PodGetter) Get() (*v1.Pod, error) {
 	if err != nil {
 		return nil, err
 	}
-	return g.filterAvaliablePod(pods)
+	return pods, nil
 }
 
 func (g *PodGetter) getPodListByName() ([]v1.Pod, error) {
@@ -123,4 +139,25 @@ func (g *PodGetter) filterAvaliablePod(pods []v1.Pod) (*v1.Pod, error) {
 		return nil, errors.New("POD状态异常")
 	}
 	return pod, nil
+}
+
+func (g *PodGetter) filterAvaliablePods(pods []v1.Pod) ([]*v1.Pod) {
+	result := make([]*v1.Pod, 0)
+	for _, p := range pods {
+		if len(p.Spec.Containers) == 0 {
+			continue
+		}
+		status := true
+		for _, cs := range p.Status.ContainerStatuses {
+			if !cs.Ready {
+				status = false
+				break
+			}
+		}
+		if !status {
+			continue
+		}
+		result = append(result, &p)
+	}
+	return result
 }

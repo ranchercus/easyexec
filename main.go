@@ -1,8 +1,9 @@
-package easyexec
+package main
 
 import (
+	"easyexec/pkg/list"
 	"easyexec/pkg/login"
-	tail2 "easyexec/pkg/tail"
+	tail2 "easyexec/pkg/tailf"
 	"flag"
 	"fmt"
 	"os"
@@ -16,6 +17,7 @@ var (
 	f string
 	u string
 	i int
+	l int
 )
 
 func init() {
@@ -44,15 +46,24 @@ func main() {
 
 	commonFlag()
 	switch opt {
-	case "tail":
+	case "tailf":
 		flag.StringVar(&f, "f", "/home/tomcat/logs/*/app.log", "文件路径")
+		flag.IntVar(&l, "l", 20, "初始时显示行数")
 		parse()
-		tail := tail2.NewTail(f)
+		tail := tail2.NewTail(f, l)
 		tail.Namespace = n
 		tail.DeploymentName = d
 		tail.PodName = p
 		tail.ContainerIndex = i
 		tail.Tail()
+	case "podlist":
+		parse()
+		podlist := list.NewPodList()
+		podlist.Namespace = n
+		podlist.DeploymentName = d
+		podlist.PodName = p
+		show := podlist.List2String()
+		fmt.Println(show)
 	case "exec":
 		parse()
 		fmt.Println("Coming Soon")
@@ -87,7 +98,13 @@ func parse() {
 
 func usage() {
 	fmt.Fprintf(os.Stderr, `easyexec version: easyexec/1.0.0
-Usage: easyexec [ login | tail | exec | logs] [Options]...
+Usage: easyexec [ login | podlist | tailf | exec | logs] [Options]...
+
+login: 登录操作，所有操作之前需要先登录。
+podlist: 根据条件显示当前用户可用的POD列表。
+tailf: 持续打印指定运行中的POD内指定的文件。
+exec: 使用命令行进入POD。
+logs: 持续打印POD的STDOUT信息。
 
 Options:
 `)

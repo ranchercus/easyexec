@@ -3,7 +3,6 @@ package objs
 import (
 	"crypto/tls"
 	"easyexec/pkg/common"
-	"easyexec/pkg/login"
 	"encoding/json"
 	"errors"
 	"io/ioutil"
@@ -22,13 +21,13 @@ type V3NamespacesList struct {
 }
 
 func GetNsByCookie() ([]string, error) {
-	c, err := login.GetCookiePath()
+	c, err := common.GetCookiePath()
 	if err != nil {
 		return nil, err
 	}
 	b, err := ioutil.ReadFile(c)
 	if err != nil {
-		return nil, err
+		return nil, errors.New("无法获取配置信息，请先登录")
 	}
 	var cookie http.Cookie
 	err = json.Unmarshal(b, &cookie)

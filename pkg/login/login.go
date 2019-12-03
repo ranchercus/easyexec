@@ -7,7 +7,6 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -108,6 +107,9 @@ func (l *Login) request() error {
 			return err
 		}
 		req.AddCookie(cookie)
+
+		defer l.storeCookie(cookie)
+
 		resp, err = l.client.Do(req)
 		if err != nil {
 			return err
@@ -124,6 +126,7 @@ func (l *Login) request() error {
 				return err
 			}
 			kubeconfig = jconfig.Config
+
 			return nil
 		} else {
 			return errors.New("认证失败，无法获取用户信息, " + resp.Status)
@@ -134,7 +137,7 @@ func (l *Login) request() error {
 }
 
 func (l *Login) store() error {
-	path, err := GetConfigPath()
+	path, err := common.GetConfigPath()
 	if err != nil {
 		return err
 	}
@@ -143,7 +146,7 @@ func (l *Login) store() error {
 }
 
 func (l *Login) storeCookie(cookie *http.Cookie) error {
-	path, err := GetCookiePath()
+	path, err := common.GetCookiePath()
 	if err != nil {
 		return err
 	}
@@ -153,33 +156,4 @@ func (l *Login) storeCookie(cookie *http.Cookie) error {
 	}
 	err = ioutil.WriteFile(path, []byte(c), 0666)
 	return err
-}
-
-func getBaseDir() string {
-	dir, err := os.UserHomeDir()
-	if err != nil {
-		dir = os.TempDir()
-	}
-	if dir[len(dir)-1:] != "/" {
-		dir = dir + "/"
-	}
-	return dir
-}
-
-func GetConfigPath() (string, error) {
-	dir := getBaseDir()
-	path, err := GetStoreFilePath(dir)
-	if err != nil {
-		return "", err
-	}
-	return path, nil
-}
-
-func GetCookiePath() (string, error) {
-	dir := getBaseDir()
-	path, err := GetStoreCookiePath(dir)
-	if err != nil {
-		return "", err
-	}
-	return path, nil
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"easyexec/pkg/list"
 	"easyexec/pkg/login"
+	logs2 "easyexec/pkg/logs"
 	tail2 "easyexec/pkg/tailf"
 	"flag"
 	"fmt"
@@ -70,8 +71,12 @@ func main() {
 		os.Exit(0)
 	case "logs":
 		parse()
-		fmt.Println("Coming Soon")
-		os.Exit(0)
+		logs := logs2.NewLogs()
+		logs.Namespace = n
+		logs.DeploymentName = d
+		logs.PodName = p
+		logs.ContainerIndex = i
+		logs.Logs()
 	default:
 		flag.Usage()
 	}

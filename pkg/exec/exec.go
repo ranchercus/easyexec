@@ -1,35 +1,30 @@
-package tailf
+package exec
 
 import (
 	"easyexec/pkg/common"
 	"easyexec/pkg/objs"
-	"encoding/json"
 	"fmt"
 	"k8s.io/api/core/v1"
-	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/scheme"
-	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/remotecommand"
 	"log"
 	"os"
-	"strconv"
 )
 
-type Tail struct {
+type Exec struct {
 	common.CommonType
-	FilePath string
-	Count    int
+	Cmd string
 }
 
-func NewTail(f string, count int) *Tail {
-	return &Tail{
-		FilePath: f,
-		Count:    count,
+func NewExec(commonType common.CommonType, cmd string) *Exec {
+	return &Exec{
+		CommonType: commonType,
+		Cmd:        cmd,
 	}
 }
 
-func (t *Tail) Tail() {
-	clientConfig, clientset := common.GetKubeClient()
+func (t *Exec) Exec() {
+	_, clientset := common.GetKubeClient()
 	podGetter := objs.NewPodGetter(clientset)
 	podGetter.PodName = t.PodName
 	podGetter.DeployName = t.DeploymentName
@@ -59,12 +54,12 @@ func (t *Tail) Tail() {
 		}
 	}
 
-	t.executeRemoteCommand(clientset, clientConfig, pod, "tail -f -n "+strconv.Itoa(t.Count)+" "+t.FilePath)
+	t.executeRemoteCommand(pod)
 }
 
-func (t *Tail) executeRemoteCommand(coreClient kubernetes.Interface, restCfg *restclient.Config, pod *v1.Pod, command string) {
-	if t.execute(coreClient, restCfg, pod, "sh", command) != nil {
-		err := t.execute(coreClient, restCfg, pod, "bash", command)
+func (t *Exec) executeRemoteCommand(pod *v1.Pod) {
+	if t.execute(pod, "sh") != nil {
+		err := t.execute(pod, "bash")
 		if err != nil {
 			fmt.Println(err)
 			log.Fatal(err)
@@ -72,7 +67,8 @@ func (t *Tail) executeRemoteCommand(coreClient kubernetes.Interface, restCfg *re
 	}
 }
 
-func (t *Tail) execute(coreClient kubernetes.Interface, restCfg *restclient.Config, pod *v1.Pod, scmd, command string) error {
+func (t *Exec) execute(pod *v1.Pod, scmd string) error {
+	restCfg, coreClient := common.GetSAKubeClient()
 	request := coreClient.CoreV1().
 		RESTClient().
 		Post().
@@ -82,7 +78,7 @@ func (t *Tail) execute(coreClient kubernetes.Interface, restCfg *restclient.Conf
 		SubResource("exec").
 		VersionedParams(&v1.PodExecOptions{
 			Container: pod.Spec.Containers[t.ContainerIndex-1].Name,
-			Command:   []string{scmd, "-c", command},
+			Command:   []string{scmd, "-c", t.Cmd},
 			Stdout:    true,
 			Stderr:    true,
 			TTY:       false,
@@ -95,7 +91,5 @@ func (t *Tail) execute(coreClient kubernetes.Interface, restCfg *restclient.Conf
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
 	})
-	j, err := json.Marshal(err)
-	fmt.Println(2, string(j))
 	return err
 }

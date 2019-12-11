@@ -16,8 +16,9 @@ type Logs struct {
 	common.CommonType
 }
 
-func NewLogs() *Logs {
+func NewLogs(commonType common.CommonType) *Logs {
 	return &Logs{
+		commonType,
 	}
 }
 

@@ -17,8 +17,8 @@ type podList struct {
 	common.CommonType
 }
 
-func NewPodList() *podList {
-	return &podList{}
+func NewPodList(commonType common.CommonType) *podList {
+	return &podList{commonType}
 }
 
 func (p *podList) List() []podListResult {

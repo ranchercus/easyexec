@@ -1,10 +1,12 @@
+//go:generate go run pkg/common/gensaconfig/main.go -kubeconfig pkg/common/gensaconfig/config
 package main
 
 import (
+	"easyexec/pkg/common"
+	exec2 "easyexec/pkg/exec"
 	"easyexec/pkg/list"
 	"easyexec/pkg/login"
 	logs2 "easyexec/pkg/logs"
-	tail2 "easyexec/pkg/tailf"
 	"flag"
 	"fmt"
 	"os"
@@ -47,22 +49,32 @@ func main() {
 
 	commonFlag()
 	switch opt {
-	case "tailf":
+	case "tail", "tailf":
 		flag.StringVar(&f, "f", "/home/tomcat/logs/*/app.log", "文件路径")
 		flag.IntVar(&l, "l", 20, "初始时显示行数")
-		parse()
-		tail := tail2.NewTail(f, l)
-		tail.Namespace = n
-		tail.DeploymentName = d
-		tail.PodName = p
-		tail.ContainerIndex = i
-		tail.Tail()
+		commonType := parse()
+		plusf := ""
+		if opt == "tailf" {
+			plusf = "-f"
+		}
+		cmd := fmt.Sprintf("tail %s -n %d %s", plusf, l, f)
+		exec := exec2.NewExec(commonType, cmd)
+		exec.Exec()
+	case "ll", "ls":
+		flag.StringVar(&f, "f", "/home/tomcat/logs/*/", "文件(文件夹)路径")
+		commonType := parse()
+		cmd := fmt.Sprintf("ls -l %s", f)
+		exec := exec2.NewExec(commonType, cmd)
+		exec.Exec()
+	case "cat":
+		flag.StringVar(&f, "f", "/home/tomcat/logs/*/app.log", "文件路径")
+		commonType := parse()
+		cmd := fmt.Sprintf("cat %s", f)
+		exec := exec2.NewExec(commonType, cmd)
+		exec.Exec()
 	case "podlist":
-		parse()
-		podlist := list.NewPodList()
-		podlist.Namespace = n
-		podlist.DeploymentName = d
-		podlist.PodName = p
+		commonType := parse()
+		podlist := list.NewPodList(commonType)
 		show := podlist.List2String()
 		fmt.Println(show)
 	case "exec":
@@ -70,12 +82,8 @@ func main() {
 		fmt.Println("Coming Soon")
 		os.Exit(0)
 	case "logs":
-		parse()
-		logs := logs2.NewLogs()
-		logs.Namespace = n
-		logs.DeploymentName = d
-		logs.PodName = p
-		logs.ContainerIndex = i
+		commonType := parse()
+		logs := logs2.NewLogs(commonType)
 		logs.Logs()
 	default:
 		flag.Usage()
@@ -89,7 +97,7 @@ func commonFlag() {
 	flag.IntVar(&i, "i", 1, "容器序号")
 }
 
-func parse() {
+func parse() common.CommonType {
 	err := flag.CommandLine.Parse(os.Args[2:])
 	if err != nil {
 		flag.Usage()
@@ -99,17 +107,27 @@ func parse() {
 		flag.Usage()
 		os.Exit(0)
 	}
+	commonType := &common.CommonType{
+		PodName:        p,
+		Namespace:      n,
+		DeploymentName: d,
+		ContainerIndex: i,
+	}
+	return *commonType
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `easyexec version: easyexec/1.0.0
-Usage: easyexec [ login | podlist | tailf | exec | logs] [Options]...
+	fmt.Fprintf(os.Stderr, `easyexec version: easyexec/1.0.1
+Usage: easyexec [ login | podlist | tail |tailf | ll | ls | cat | logs] [Options]...
 
 login: 登录操作，所有操作之前需要先登录。
 podlist: 根据条件显示当前用户可用的POD列表。
-tailf: 持续打印指定运行中的POD内指定的文件。
-exec: 使用命令行进入POD。
-logs: 持续打印POD的STDOUT信息。
+tail: 打印指定运行中的POD内指定的文件末尾数行。
+tailf: 持续打印指定运行中的POD内指定的文件，等同于tail -f。
+ll: 查看指定目录下文件信息。
+ls: 查看指定目录下文件信息。
+cat: 打印文件全部内容。(Linux下运行可使用命令: 'easyexec cat -d xxx > abc.txt'将内容保存至本地)
+logs: 持续打印POD的STDOUT信息，等同于docker logs。
 
 Options:
 `)
